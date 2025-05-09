@@ -1,0 +1,9 @@
+/.idea/
+/.vscode/
+/venv/
+**/__pycache__/
+.env.json
+aegis_report_id.json
+SITC-Cas.json
+test.py
+
