@@ -75,3 +75,11 @@ def get_header(host, content_type=None, referer=filetransfer_baseurl, origin=fil
 
 def random_string(length=4):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+
+def generate_client_msg_id():
+    return str(int(time.time() * 1000)) + str(random.randint(100, 999))
+
+
+def generate_client_media_id():
+    return int(time.time() * 1000) + random.randint(0, 9999)

@@ -22,7 +22,7 @@ def checkCookieExpired(cookies=None, white_list: list = []):
     return False
 
 
-def save_cookies_as_json(cookies, skey, pass_ticket, expires_sec: int):
+def save_cookies_as_json(cookies, skey, pass_ticket, expires_sec: int, save_cookie_path=cookie_path):
     cookies_list = []
     expiry_time = datetime.now() + timedelta(seconds=expires_sec)
 
@@ -57,22 +57,22 @@ def save_cookies_as_json(cookies, skey, pass_ticket, expires_sec: int):
         })
     # 保存 cookies 到文件
     try:
-        with open(cookie_path, 'w') as file:
+        with open(save_cookie_path, 'w') as file:
             json.dump(cookies_list, file, ensure_ascii=False)
     except Exception as e:
         print(f"Error saving cookies: {e}")
 
-    print(f"Cookies have been saved to {cookie_path}")
+    print(f"Cookies have been saved to {save_cookie_path}")
     return {cookie['name']: cookie['value'] for cookie in cookies_list}
 
 
-def load_cookies_from_json():
+def load_cookies_from_json(load_cookie_path=cookie_path):
     try:
-        if os.path.exists(cookie_path):
-            with open(cookie_path, 'r') as file:
+        if os.path.exists(load_cookie_path):
+            with open(load_cookie_path, 'r') as file:
                 cookies_list = json.load(file)
                 if checkCookieExpired(cookies_list):
-                    return None, None
+                    return None, None, None
                 for cookie in cookies_list:
                     if cookie['name'] == 'skey':
                         skey = cookie['value']
@@ -80,7 +80,7 @@ def load_cookies_from_json():
                         pass_ticket = cookie['value']
             return {cookie['name']: cookie['value'] for cookie in cookies_list if
                     cookie['name'] != 'skey' and cookie['name'] != 'pass_ticket'}, skey, pass_ticket
-        return None, None
+        return None, None, None
     except Exception as e:
         print(f"Error loading cookies: {e}")
-        return None, None
+        return None, None, None

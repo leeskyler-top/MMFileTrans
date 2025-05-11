@@ -6,7 +6,7 @@ import urllib3
 from requests.adapters import HTTPAdapter
 
 from LoadEnviroment.LoadEnv import filetransfer_domain, filetransfer_baseurl, aegis_baseurl, \
-    aegis_version, aegis_domain, wechat_login_baseurl, wechat_login_domain
+    aegis_version, aegis_domain, wechat_login_baseurl, wechat_login_domain, cookie_path
 from utils.Generate import get_header
 from utils.LoadCookies import save_cookies_as_json, load_cookies_from_json
 from utils.LoadJson import get_aegis_id
@@ -220,13 +220,13 @@ def login(session, uuid):
 
 
 # 该操作将Set-Cookie!
-def webwxnewloginpage(session, redirect_url):
+def webwxnewloginpage(session, redirect_url, save_cookie_path=cookie_path):
     headers = get_header(host=filetransfer_domain)
     headers['Mmweb_appid'] = 'wx_webfilehelper'
     res = reqApi(session, redirect_url, headers, "POST", allow_redirect=False)
     print(res.cookies.get_dict())
     login_data = parse_webwxnewloginpage_response(res.text)
-    cookie_dict = save_cookies_as_json(res.cookies.get_dict(), login_data['skey'], login_data['pass_ticket'], 6000)
+    cookie_dict = save_cookies_as_json(res.cookies.get_dict(), login_data['skey'], login_data['pass_ticket'], 6000, save_cookie_path=save_cookie_path)
     print(cookie_dict)
     reqApi(session, filetransfer_baseurl, headers=headers, allow_redirect=False)
     return cookie_dict, login_data['skey'], login_data['pass_ticket']
@@ -254,13 +254,13 @@ def webwxinit(session, pass_ticket, skey, cookie_dict):
     return res.json()['User']
 
 
-def run_login():
+def run_login(using_general_cookie=True, using_cookie_path="./micromsg.json"):
     session = get_new_session()
-    cookies_dict, skey = load_cookies_from_json()
+    cookies_dict, skey, pass_ticket = load_cookies_from_json(cookie_path if using_general_cookie else using_cookie_path)
     if cookies_dict:
         user_conf = webwxinit(session, pass_ticket=cookies_dict['webwx_data_ticket'], skey=skey,
                               cookie_dict=cookies_dict)
-        return session, cookies_dict, skey, user_conf
+        return session, cookies_dict, skey, pass_ticket, user_conf
     whitelist(session)
     webwxstatreport(session)
 
@@ -284,10 +284,10 @@ def run_login():
             code, redirect_url = login(session, login_uuid)
 
             if code == '200':  # 登录成功
-                cookies_dict, skey, pass_ticket = webwxnewloginpage(session, redirect_url)
+                cookies_dict, skey, pass_ticket = webwxnewloginpage(session, redirect_url, using_cookie_path if using_general_cookie else cookie_path)
                 user_conf = webwxinit(session, pass_ticket=cookies_dict['webwx_data_ticket'], skey=skey,
                                       cookie_dict=cookies_dict)
-                return session, cookies_dict, skey, user_conf  # 成功后退出
+                return session, cookies_dict, skey, pass_ticket, user_conf  # 成功后退出
             elif code == '201':  # 已扫码，待确认
                 waiting_count += 1
                 continue  # 继续等待二维码确认
@@ -299,5 +299,5 @@ def run_login():
 
 
 if __name__ == "__main__":
-    session, cookies_dict, skey = run_login()
-    print(skey)
+    session, cookies_dict, skey, user_conf = run_login(False, "22100484.json")
+    print(user_conf)

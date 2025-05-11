@@ -3,25 +3,20 @@ import hashlib
 import os
 import math
 import mimetypes
-import random
-import string
 import requests
 import json
 
-from LoadEnviroment.LoadEnv import file_wx_baseurl, filetransfer_baseurl, file_wx_domain
-from utils.Generate import get_header
+from LoadEnviroment.LoadEnv import file_wx_baseurl, filetransfer_baseurl, file_wx_domain, filetransfer_domain
+from utils.Generate import get_header, random_string, generate_client_media_id, generate_client_msg_id
 from utils.LoadJson import get_aegis_id
 from utils.ParseData import get_form_data_type
 
 CHUNK_SIZE = 512 * 1024  # 512 KB
 UPLOAD_MEDIA_BASE = f"{file_wx_baseurl}/cgi-bin/mmwebwx-bin/webwxuploadmedia"
 UPLOAD_PARALLEL_BASE = f"{file_wx_baseurl}/cgi-bin/mmwebwx-bin/webwxuploadmediaparallel"
-CHECK_UPLOAD_URL = f"{filetransfer_baseurl}/cgi-bin/mmwebwx-bin/webwxcheckupload?f=json"
+CHECK_UPLOAD_URL = f"{filetransfer_baseurl}/cgi-bin/mmwebwx-bin/webwxcheckupload"
+print(CHECK_UPLOAD_URL)
 aid, uin, session_id, device_id, report_id = get_aegis_id()
-
-
-def random_string(length=4):
-    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
 
 def get_file_md5(file_path):
@@ -32,12 +27,72 @@ def get_file_md5(file_path):
     return md5.hexdigest()
 
 
-def upload_parallel(file_path, cookies_dict, aeskey, signature, pass_ticket):
+def get_aes_signature(cookie_dict, user_config, skey, filename, filesize, file_md5):
+    data = {
+        "BaseRequest": {
+            "Uin": cookie_dict["wxuin"],
+            "Sid": cookie_dict['wxsid'],
+            "Skey": skey,
+            "DeviceID": device_id
+        },
+        "FileMd5": file_md5,
+        "FileName": filename,
+        "FileSize": filesize,
+        "FileType": 7,
+        "FromUserName": user_config['UserName'],
+        "ToUserName": "filehelper"
+    }
+    headers = get_header(filetransfer_domain, "application/json;charset=UTF-8")
+    headers['Mmweb_appid'] = "wx_webfilehelper"
+    res = requests.post(CHECK_UPLOAD_URL, headers=headers, cookies=cookie_dict, json=data)
+    print(res.status_code)
+    return res.json()
+
+
+def webwxsendappmsg(cookie_dict, filename, filesize, mediaid, pass_ticket, skey, user_config, aeskey, signature):
+    file_ext = filename.split('.')[-1] if '.' in filename else ''
+    params = {
+        "fun": "async",
+        "f": "json",
+        "lang": "zh_CN",
+        "pass_tciket": pass_ticket
+
+    }
+    base_request = {
+        "Uin": cookie_dict['wxuin'],
+        "Sid": cookie_dict['wxsid'],
+        "Skey": skey,
+        "DeviceID": device_id
+    }
+    msg = {
+        "ClientMsgId": generate_client_msg_id(),
+        "FromUserName": user_config['UserName'],
+        "LocalID": generate_client_msg_id(),
+        "ToUserName": "filehelper",
+        "Type": 6,
+        "Content": f"<appmsg appid='wxeb7ec651dd0aefa9' sdkver=''><title>{filename}</title><des></des><action></action><type>6</type><content></content><url></url><lowurl></lowurl><appattach><totallen>{filesize}</totallen><attachid>{mediaid}</attachid><fileext>{file_ext}</fileext></appattach><extinfo></extinfo></appmsg>",
+        "AESKey": aeskey,
+        "Signature": signature
+    }
+    url = f"{filetransfer_baseurl}/cgi-bin/mmwebwx-bin/webwxsendappmsg"
+    headers = get_header(filetransfer_domain, "application/json;charset=UTF-8")
+    headers["Mmweb_appid"] = "wx_webfilehelper"
+    res = requests.post(url, headers=headers, cookies=cookie_dict, json={
+        "BaseRequest": base_request,
+        "Msg": msg,
+        "Scene": 0
+    }, params=params)
+    return res.json()
+
+
+def upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket):
     file_size = os.path.getsize(file_path)
     total_chunks = math.ceil(file_size / CHUNK_SIZE)
     file_md5 = get_file_md5(file_path)
     filename = os.path.basename(file_path)
 
+    file_config = get_aes_signature(cookies_dict, user_config, skey, filename, file_size, file_md5)
+    result = {}
     with open(file_path, "rb") as f:
         for chunk_index in range(total_chunks):
             f.seek(chunk_index * CHUNK_SIZE)
@@ -47,7 +102,7 @@ def upload_parallel(file_path, cookies_dict, aeskey, signature, pass_ticket):
                 "BaseRequest": {
                     "Uin": cookies_dict["wxuin"],
                     "Sid": cookies_dict["wxsid"],
-                    "Skey": cookies_dict["skey"],
+                    "Skey": skey,
                     "DeviceID": device_id
                 },
                 "FileMD5": file_md5,
@@ -55,8 +110,8 @@ def upload_parallel(file_path, cookies_dict, aeskey, signature, pass_ticket):
                 "Chunks": total_chunks,
                 "Chunk": chunk_index,
                 "Name": filename,
-                "AESKey": aeskey,
-                "Signature": signature
+                "AESKey": file_config["AESKey"],
+                "Signature": file_config["Signature"],
             }
 
             data = {
@@ -72,12 +127,14 @@ def upload_parallel(file_path, cookies_dict, aeskey, signature, pass_ticket):
             }
 
             headers = get_header(host=file_wx_domain)
-            headers["Access-Control-Request-Headers"] = "mmweb_appid",
-            headers["Access-Control-Request-Method"] = "POST",
+            headers["Access-Control-Request-Headers"] = "mmweb_appid"
+            headers["Access-Control-Request-Method"] = "POST"
             for attempt in range(3):
                 preflight = requests.options(UPLOAD_PARALLEL_BASE, params=params, headers=headers)
                 if preflight.status_code == 200:
                     break
+                else:
+                    params['random'] = random_string()
                 if attempt == 2:
                     print(f"❌ Preflight failed after 3 attempts for chunk {chunk_index}")
                     return
@@ -91,35 +148,39 @@ def upload_parallel(file_path, cookies_dict, aeskey, signature, pass_ticket):
                 params=params,
                 data=multipart_data,
                 headers=headers,
-                cookies=cookies_dict
+                cookies=cookies_dict,
+
             )
             try:
-                print(resp.json())
+                result = resp.json()
+
             except:
                 print(resp.status_code, resp.text)
+        webwxsendappmsg(cookie_dict=cookies_dict, filename=filename, filesize=file_size,
+                        mediaid=result['MediaId'], pass_ticket=pass_ticket, skey=skey, user_config=user_config,
+                        aeskey=file_config["AESKey"], signature=file_config["Signature"])
 
     print("✅ Upload completed.")
 
 
-def upload_small_file(file_path, cookies_dict, from_user_name, pass_ticket):
+def upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket):
     filename = os.path.basename(file_path)
     filesize = os.path.getsize(file_path)
     filemd5 = get_file_md5(file_path)
     total_chunks = math.ceil(filesize / CHUNK_SIZE)
-
+    file_config = get_aes_signature(cookies_dict, user_config, skey, filename, filesize, filemd5)
+    result = {}
+    client_media_id = generate_client_media_id()
     with open(file_path, 'rb') as f:
         for chunk_index in range(total_chunks):
             f.seek(chunk_index * CHUNK_SIZE)
             chunk_data = f.read(CHUNK_SIZE)
-
-            client_media_id = int(time.time() * 1000)
-
             upload_media_request = {
                 "UploadType": 2,
                 "BaseRequest": {
                     "Uin": cookies_dict["wxuin"],
                     "Sid": cookies_dict["wxsid"],
-                    "Skey": cookies_dict["skey"],
+                    "Skey": skey,
                     "DeviceID": device_id
                 },
                 "ClientMediaId": client_media_id,
@@ -127,7 +188,7 @@ def upload_small_file(file_path, cookies_dict, from_user_name, pass_ticket):
                 "StartPos": chunk_index * CHUNK_SIZE,
                 "DataLen": len(chunk_data),
                 "MediaType": 4,
-                "FromUserName": from_user_name,
+                "FromUserName": user_config["UserName"],
                 "ToUserName": "filehelper",
                 "FileMd5": filemd5
             }
@@ -152,8 +213,8 @@ def upload_small_file(file_path, cookies_dict, from_user_name, pass_ticket):
             }
 
             headers = get_header(host=file_wx_domain)
-            headers["Access-Control-Request-Headers"] = "mmweb_appid",
-            headers["Access-Control-Request-Method"] = "POST",
+            headers["Access-Control-Request-Headers"] = "mmweb_appid"
+            headers["Access-Control-Request-Method"] = "POST"
             for attempt in range(3):
                 preflight = requests.options(UPLOAD_MEDIA_BASE, params=params, headers=headers)
                 if preflight.status_code == 200:
@@ -174,3 +235,16 @@ def upload_small_file(file_path, cookies_dict, from_user_name, pass_ticket):
                 print("✅ Upload success:", result)
             except:
                 print(resp.status_code, resp.text)
+    webwxsendappmsg(cookie_dict=cookies_dict, filename=filename, filesize=filesize,
+                    mediaid=result['MediaId'], pass_ticket=pass_ticket, skey=skey, user_config=user_config,
+                    aeskey=file_config["AESKey"], signature=file_config["Signature"])
+
+def upload_auto_file(file_path, cookies_dict, user_config, skey, pass_ticket):
+    file_size = os.path.getsize(file_path)
+
+    if file_size > 25 * 1024 * 1024:  # 大于25MB，使用并发上传
+        print("📦 使用并发上传（webwxuploadmediaparallel）")
+        upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket)
+    else:
+        print("📄 使用普通上传（webwxuploadmedia）")
+        upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket)
