@@ -5,11 +5,14 @@ import requests
 import urllib3
 from requests.adapters import HTTPAdapter
 
-from LoadEnviroment.LoadEnv import user_agent, sec_ch_ua, filetransfer_domain, filetransfer_baseurl, aegis_baseurl, \
-    aegis_version, aegis_domain, wechat_login_baseurl, wechat_login_domain, szfiletransfer_domain, \
-    szfiletransfer_baseurl
-from utils import get_header, get_aegis_id, get_form_data_type, save_cookies_as_json, parse_webwxnewloginpage_response, \
-    parse_jslogin_response, download_img, load_cookies_from_json
+from LoadEnviroment.LoadEnv import filetransfer_domain, filetransfer_baseurl, aegis_baseurl, \
+    aegis_version, aegis_domain, wechat_login_baseurl, wechat_login_domain
+from utils.Generate import get_header
+from utils.LoadCookies import save_cookies_as_json, load_cookies_from_json
+from utils.LoadJson import get_aegis_id
+from utils.ParseData import get_form_data_type, parse_jslogin_response, parse_webwxnewloginpage_response, download_img
+
+aid, uin, session_id, device_id, report_id = get_aegis_id()
 
 
 class CustomHttpAdapter(HTTPAdapter):
@@ -62,9 +65,11 @@ def reqApi(session, url: str, headers: dict, method: str = "GET", json: dict = N
         return session
     elif method == "POST":
         if data is not None:
-            session = session.post(url, data=data, headers=headers, params=params, cookies=cookie_dict, allow_redirects=allow_redirect)
+            session = session.post(url, data=data, headers=headers, params=params, cookies=cookie_dict,
+                                   allow_redirects=allow_redirect)
         else:
-            session = session.post(url, headers=headers, json=json, params=params, cookies=cookie_dict, allow_redirects=allow_redirect)
+            session = session.post(url, headers=headers, json=json, params=params, cookies=cookie_dict,
+                                   allow_redirects=allow_redirect)
         return session
     elif method == "PATCH":
         # 注意这里没有json.dumps, 自己传的时候json.dumps()一下
@@ -97,7 +102,6 @@ def webwxstatreport(session, data=None):
 
 def whitelist(session):
     url = f"{aegis_baseurl}/collect/whitelist"
-    aid, uin, session_id, device_id, report_id = get_aegis_id()
     url = f'https://aegis.qq.com/collect/whitelist?id=neGcmxiTIeDBcIOiWX&uin=2sn4oyl4n37&version=1.36.0&aid=a0467acb-97cf-49fa-9acb-a987bb549172&env=production&platform=3&netType=4&vp=210%20*%20742&sr=1536%20*%20864&sessionId=session-1746804015703&from=https%3A%2F%2Ffilehelper.weixin.qq.com%2F&referer='
     params = {
         "id": report_id,
@@ -116,8 +120,8 @@ def whitelist(session):
 
     print(params)
     headers = get_header(host=aegis_domain, content_type=None)
-    session = reqApi(session, url, headers, "GET")
-    print(f"whitelist: {session.status_code}")
+    res = reqApi(session, url, headers, "GET")
+    print(f"whitelist: {res.status_code}")
 
 
 def speed(session, qrcode_url, duration, uin=None):
@@ -174,8 +178,8 @@ def speed(session, qrcode_url, duration, uin=None):
     form_data, content_type = get_form_data_type({'payload': payload})
     print(duration)
     headers = get_header(host=aegis_domain, content_type=content_type)
-    session = reqApi(session, url, headers, "GET", params=params, data=form_data)
-    print(f"speed: {session.status_code}")
+    res = reqApi(session, url, headers, "GET", params=params, data=form_data)
+    print(f"speed: {res.status_code}")
 
 
 # 拿login uuid 做二维码后缀
@@ -190,9 +194,9 @@ def jslogin(session):
         "_": f"{timestamp_ms}"
     }
     headers = get_header(host=wechat_login_domain)
-    session = reqApi(session, url, headers, "POST", params=params)
-    print(f"get login uuid: {session.status_code}, text: {session.text}")
-    return session.text.split(' ')[-1].replace(';', "").replace('"', "").replace("'", "").replace(" ", "").strip()
+    res = reqApi(session, url, headers, "POST", params=params)
+    print(f"get login uuid: {res.status_code}, text: {res.text}")
+    return res.text.split(' ')[-1].replace(';', "").replace('"', "").replace("'", "").replace(" ", "").strip()
 
 
 # speed("https://login.weixin.qq.com/qrcode/YfGT4ER6IQ==", round(random.uniform(60,120), 1))
@@ -209,9 +213,9 @@ def login(session, uuid):
         "appid": "wx_webfilehelper"
     }
     headers = get_header(host=wechat_login_domain)
-    session = reqApi(session, url, headers, "POST", params=params)
-    print(f"try_login: {session.status_code}, text: {session.text}")
-    code, redirect_uri = parse_jslogin_response(session.text)
+    res = reqApi(session, url, headers, "POST", params=params)
+    print(f"try_login: {res.status_code}, text: {res.text}")
+    code, redirect_uri = parse_jslogin_response(res.text)
     return code, redirect_uri
 
 
@@ -222,10 +226,10 @@ def webwxnewloginpage(session, redirect_url):
     res = reqApi(session, redirect_url, headers, "POST", allow_redirect=False)
     print(res.cookies.get_dict())
     login_data = parse_webwxnewloginpage_response(res.text)
-    cookie_dict = save_cookies_as_json(res.cookies.get_dict(), login_data['skey'], 6000)
+    cookie_dict = save_cookies_as_json(res.cookies.get_dict(), login_data['skey'], login_data['pass_ticket'], 6000)
     print(cookie_dict)
     reqApi(session, filetransfer_baseurl, headers=headers, allow_redirect=False)
-    return cookie_dict, login_data['skey']
+    return cookie_dict, login_data['skey'], login_data['pass_ticket']
 
 
 def webwxinit(session, pass_ticket, skey, cookie_dict):
@@ -235,7 +239,6 @@ def webwxinit(session, pass_ticket, skey, cookie_dict):
         "lang": "zh_CN",
         "pass_ticket": pass_ticket
     }
-    aid, uin, session_id, device_id, report_id = get_aegis_id()
     data = {
         "BaseRequest": {
             "Uin": cookie_dict['wxuin'],
@@ -244,24 +247,24 @@ def webwxinit(session, pass_ticket, skey, cookie_dict):
             "DeviceID": device_id
         }
     }
-    header = get_header(filetransfer_domain)
+    header = get_header(filetransfer_domain, content_type="application/json;charset=UTF-8")
     header['Mmweb_appid'] = 'wx_webfilehelper'
-    req = reqApi(session, url, header, "POST", params=params, data=data, cookie_dict=cookie_dict)
-    print(f"webwxinit: {req.status_code}")
-    print(req.text)
-    return req
+    res = reqApi(session, url, header, "POST", params=params, json=data, cookie_dict=cookie_dict)
+    print(f"webwxinit: {res.status_code}")
+    return res.json()['User']
 
 
 def run_login():
     session = get_new_session()
     cookies_dict, skey = load_cookies_from_json()
     if cookies_dict:
-        return session, cookies_dict, skey
+        user_conf = webwxinit(session, pass_ticket=cookies_dict['webwx_data_ticket'], skey=skey,
+                              cookie_dict=cookies_dict)
+        return session, cookies_dict, skey, user_conf
     whitelist(session)
     webwxstatreport(session)
 
     MAX_WAITING_COUNT = 20
-
 
     while True:
         # 获取二维码 UUID
@@ -281,9 +284,10 @@ def run_login():
             code, redirect_url = login(session, login_uuid)
 
             if code == '200':  # 登录成功
-                cookies_dict, skey = webwxnewloginpage(session, redirect_url)
-                webwxinit(session, pass_ticket=cookies_dict['webwx_data_ticket'], skey=skey, cookie_dict=cookies_dict)
-                return session, cookies_dict, skey # 成功后退出
+                cookies_dict, skey, pass_ticket = webwxnewloginpage(session, redirect_url)
+                user_conf = webwxinit(session, pass_ticket=cookies_dict['webwx_data_ticket'], skey=skey,
+                                      cookie_dict=cookies_dict)
+                return session, cookies_dict, skey, user_conf  # 成功后退出
             elif code == '201':  # 已扫码，待确认
                 waiting_count += 1
                 continue  # 继续等待二维码确认
@@ -292,6 +296,7 @@ def run_login():
         # 如果达到最大等待次数，重新获取二维码 UUID
         print("Waiting for confirmation timed out, generating a new QR code...")
         # 此处会自动回到外层循环，获取新的 UUID 和二维码
+
 
 if __name__ == "__main__":
     session, cookies_dict, skey = run_login()

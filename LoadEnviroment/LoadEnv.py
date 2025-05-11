@@ -13,6 +13,8 @@ wechat_login_domain = "login.wx2.qq.com"
 wechat_login_baseurl = "https://login.wx2.qq.com"
 file_domain = "file.weixin.qq.com"
 file_baseurl = "https://file.weixin.qq.com"
+file_wx_domain = "file.wx.qq.com"
+file_wx_baseurl = "https://file.wx.qq.com"
 szfiletransfer_domain = "szfilehelper.weixin.qq.com"
 szfiletransfer_baseurl = "https://szfilehelper.weixin.qq.com"
 expiry_duration_sec = 86400
@@ -21,13 +23,12 @@ cookie_path = "./micromsg.json"
 
 def load_env(filepath):
     global aegis_report_id_json_path, user_agent, sec_ch_ua, \
-        aegis_report_id, expiry_duration_sec, cookie_path
+        expiry_duration_sec, cookie_path
 
     with open(filepath, 'r') as f:
         data = json.load(f)
         aegis_report_id_json_path = data['aegis_id_json_path']
         user_agent = data['user_agent']
-        aegis_report_id = data['aegis_report_id']
         expiry_duration_sec = data['expiry_duration_sec']
         cookie_path = data['cookie_path']
 
