@@ -10,6 +10,10 @@ import xml.etree.ElementTree as ET
 def get_form_data_type(data):
     # 使用 MultipartEncoder 构造 multipart/form-data
     multipart_data = MultipartEncoder(fields=data)
+    # print("------ BEGIN RAW MULTIPART FORM ------")
+    # print(multipart_data.to_string().decode('utf-8', errors='replace'))  # 输出原始 body 内容
+    # print("------ END RAW MULTIPART FORM ------")
+    # print("Content-Type Header:\n", multipart_data.content_type)
     return multipart_data, multipart_data.content_type
 
 
