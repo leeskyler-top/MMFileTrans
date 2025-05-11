@@ -1,6 +1,7 @@
 import json
 import os
 
+aegis_report_id = "neGcmxiTIeDBcIOiWX"
 aegis_id_json_path = "./aegis_report_id.json"
 user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
 sec_ch_ua = "Google Chrome\";v=\"135\", \"Not-A.Brand\";v=\"8\", \"Chromium\";v=\"135\""
@@ -31,6 +32,7 @@ def load_env(filepath):
         user_agent = data['user_agent']
         expiry_duration_sec = data['expiry_duration_sec']
         cookie_path = data['cookie_path']
+        aegis_report_id = data['aegis_report_id']
 
 
 _default_env_path = os.path.join(os.getcwd(), '.env.json')
