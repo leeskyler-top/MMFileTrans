@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WebSocket File Upload Example</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.0/socket.io.js"></script>
+</head>
+<body>
+    <h1>WebSocket File Upload</h1>
+    <button id="loginButton">Login</button>
+    <img id="qrcode" src="" alt="QR Code" style="width: 200px; height: 200px;">
+    <p id="status"></p>
+
+    <input type="file" id="fileInput" />
+    <button id="uploadButton">Upload File</button>
+
+    <script>
+        const socket = io('http://127.0.0.1:5000');
+        let sessionId; // Variable to save the session ID
+
+        socket.on('update_qrcode', function(data) {
+            document.getElementById('qrcode').src = `data:image/png;base64,${data.qrcode_base64}`;
+        });
+
+        socket.on('login_status', function(data) {
+            document.getElementById('status').innerText = 'Login status: ' + data.code;
+        });
+
+        socket.on('login_success', function(data) {
+            document.getElementById('status').innerText = 'Login Successful';
+        });
+
+        document.getElementById('loginButton').onclick = function() {
+            fetch('http://127.0.0.1:5000/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cookie_filename: './micromsg.json' })
+            })
+            .then(response => response.json())
+            .then(data => {
+                sessionId = data.session_id; // Save the session ID
+                console.log("Received session ID:", sessionId);
+            });
+        };
+
+        document.getElementById('uploadButton').onclick = function() {
+            const fileInput = document.getElementById('fileInput');
+
+            if (fileInput.files.length === 0) {
+                alert("No file selected.");
+                return;
+            }
+
+            const file = fileInput.files[0]; // Get the selected file
+            const formData = new FormData();
+            formData.append('file', file); // Add file to form data
+            formData.append('session_id', sessionId); // Add session ID
+
+            fetch('http://127.0.0.1:5000/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log(data);
+                document.getElementById('status').innerText = data.message;
+            })
+            .catch(error => {
+                console.error('Error uploading file:', error);
+                document.getElementById('status').innerText = 'File upload failed.';
+            });
+        };
+    </script>
+</body>
+</html>

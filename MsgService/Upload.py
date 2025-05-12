@@ -3,6 +3,8 @@ import hashlib
 import os
 import math
 import mimetypes
+from datetime import datetime
+
 import requests
 import json
 
@@ -17,12 +19,24 @@ UPLOAD_PARALLEL_BASE = f"{file_wx_baseurl}/cgi-bin/mmwebwx-bin/webwxuploadmediap
 CHECK_UPLOAD_URL = f"{filetransfer_baseurl}/cgi-bin/mmwebwx-bin/webwxcheckupload"
 aid, uin, session_id, device_id, report_id = get_aegis_id()
 
+import hashlib
 
-def get_file_md5(file_path):
+
+def get_file_md5(file_path=None, file_stream=None):
+    """计算文件的MD5值，可以从文件路径或文件流中获取。"""
     md5 = hashlib.md5()
-    with open(file_path, 'rb') as f:
-        while chunk := f.read(8192):
-            md5.update(chunk)
+
+    if file_stream is None and file_path is not None:
+        # 从文件路径读取
+        with open(file_path, 'rb') as f:
+            while chunk := f.read(8192):
+                md5.update(chunk)
+    elif file_stream is not None:
+        # 从文件流读取
+        md5.update(file_stream)
+    else:
+        raise ValueError("Either 'file_path' must be provided or 'file_stream' must be given.")
+
     return md5.hexdigest()
 
 
@@ -85,11 +99,17 @@ def webwxsendappmsg(cookie_dict, filename, filesize, mediaid, pass_ticket, skey,
     return res.json()
 
 
-def upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket):
-    file_size = os.path.getsize(file_path)
-    total_chunks = math.ceil(file_size / CHUNK_SIZE)
-    file_md5 = get_file_md5(file_path)
-    filename = os.path.basename(file_path)
+def upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None):
+    if not file_stream:
+        file_size = os.path.getsize(file_path)
+        total_chunks = math.ceil(file_size / CHUNK_SIZE)
+        file_md5 = get_file_md5(file_path)
+        filename = os.path.basename(file_path)
+    else:
+        file_size = len(file_stream)
+        total_chunks = math.ceil(file_size / CHUNK_SIZE)
+        file_md5 = get_file_md5(None, file_stream)  # 函数需要适应流
+        filename = filename if filename else str(datetime.now().strftime('%Y%m%d%H%M%S') + "_" + random_string(8))
 
     file_config = get_aes_signature(cookies_dict, user_config, skey, filename, file_size, file_md5)
     result = {}
@@ -108,115 +128,27 @@ def upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket):
             "Skey": skey
         }
     }
-    with open(file_path, "rb") as f:
-        for chunk_index in range(total_chunks):
-            MAX_RETIRES = 5
-            for attempt in range(MAX_RETIRES):
-                f.seek(chunk_index * CHUNK_SIZE)
-                chunk_data = f.read(CHUNK_SIZE)
 
-                upload_request['Chunk'] = chunk_index
-                upload_req = json.dumps(upload_request).replace(": ", ":").replace(", ", ",")
-                print(upload_req)
-                data = {
-                    "pass_ticket": cookies_dict['webwx_data_ticket'],
-                    "webwx_data_ticket": cookies_dict['webwx_data_ticket'],
-                    "UploadMediaParallelRequest": upload_req,
-                    "filename": ("blob", chunk_data, "application/octet-stream"),
-                }
+    for chunk_index in range(total_chunks):
+        MAX_RETIRES = 5
+        for attempt in range(MAX_RETIRES):
+            if file_stream is None:
+                # 如果没有 file_stream，从文件路径读取
+                with open(file_path, "rb") as f:
+                    f.seek(chunk_index * CHUNK_SIZE)
+                    chunk_data = f.read(CHUNK_SIZE)
+            else:
+                # 如果有 file_stream，则从流中读取
+                chunk_start = chunk_index * CHUNK_SIZE
+                chunk_data = file_stream[chunk_start:chunk_start + CHUNK_SIZE]
 
-                params = {
-                    "f": "json",
-                    "random": random_string()
-                }
-
-                headers = get_header(host=file_wx_domain)
-                headers["Access-Control-Request-Headers"] = "mmweb_appid"
-                headers["Access-Control-Request-Method"] = "POST"
-                for inner_attempt in range(3):
-                    preflight = requests.options(UPLOAD_PARALLEL_BASE, params=params, headers=headers)
-                    if preflight.status_code == 200:
-                        break
-                    else:
-                        params['random'] = random_string()
-                    if inner_attempt == 2:
-                        print(f"❌ Preflight failed after 3 attempts for chunk {chunk_index}")
-                        return
-
-                print(f"[{chunk_index + 1}/{total_chunks}] Uploading chunk...")
-                multipart_data, content_type = get_form_data_type(data)
-                headers = get_header(host=file_wx_domain, content_type=content_type)
-                headers['Mmweb_appid'] = 'wx_webfilehelper'
-                resp = requests.post(
-                    UPLOAD_PARALLEL_BASE,
-                    params=params,
-                    data=multipart_data,
-                    headers=headers,
-                    cookies=cookies_dict,
-
-                )
-                result = resp.json()
-                print(result)
-                if result.get("BaseResponse", {}).get("Ret") == 0:
-                    # 成功
-                    if chunk_index == 0:
-                        upload_request["UploadID"] = result["UploadID"]
-                    break
-                elif result.get("BaseResponse", {}).get("Ret") == -1:
-                    if attempt == MAX_RETIRES - 1:
-                        return
-                    print("⚠️ Logic err, retrying...")
-                    time.sleep(1)
-                    continue
-
-        webwxsendappmsg(cookie_dict=cookies_dict, filename=filename, filesize=file_size,
-                        mediaid=result['MediaId'], pass_ticket=pass_ticket, skey=skey, user_config=user_config,
-                        aeskey=file_config["AESKey"], signature=file_config["Signature"])
-
-    print("✅ Upload completed.")
-
-
-def upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket):
-    filename = os.path.basename(file_path)
-    filesize = os.path.getsize(file_path)
-    filemd5 = get_file_md5(file_path)
-    total_chunks = math.ceil(filesize / CHUNK_SIZE)
-    file_config = get_aes_signature(cookies_dict, user_config, skey, filename, filesize, filemd5)
-    result = {}
-    client_media_id = generate_client_media_id()
-    with open(file_path, 'rb') as f:
-        for chunk_index in range(total_chunks):
-            f.seek(chunk_index * CHUNK_SIZE)
-            chunk_data = f.read(CHUNK_SIZE)
-            upload_media_request = {
-                "UploadType": 2,
-                "BaseRequest": {
-                    "Uin": cookies_dict["wxuin"],
-                    "Sid": cookies_dict["wxsid"],
-                    "Skey": skey,
-                    "DeviceID": device_id
-                },
-                "ClientMediaId": client_media_id,
-                "TotalLen": filesize,
-                "StartPos": chunk_index * CHUNK_SIZE,
-                "DataLen": len(chunk_data),
-                "MediaType": 4,
-                "FromUserName": user_config["UserName"],
-                "ToUserName": "filehelper",
-                "FileMd5": filemd5
-            }
+            upload_request['Chunk'] = chunk_index
+            upload_req = json.dumps(upload_request).replace(": ", ":").replace(", ", ",")
             data = {
-                "name": filename,
-                "lastModifiedDate": time.strftime('%a %b %d %Y %H:%M:%S GMT+0800 (中国标准时间)', time.localtime()),
-                "size": str(filesize),
-                "type": "",
-                "chunks": str(total_chunks),
-                "chunk": str(chunk_index),
-                "mediatype": "doc",
-                "uploadmediarequest": upload_media_request,
+                "pass_ticket": cookies_dict['webwx_data_ticket'],
                 "webwx_data_ticket": cookies_dict['webwx_data_ticket'],
-                "pass_ticket": pass_ticket,
-                "filename": (filename, chunk_data, mimetypes.guess_type(filename)[0] or "application/octet-stream")
+                "UploadMediaParallelRequest": upload_req,
+                "filename": ("blob", chunk_data, "application/octet-stream"),
             }
 
             params = {
@@ -227,37 +159,158 @@ def upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket):
             headers = get_header(host=file_wx_domain)
             headers["Access-Control-Request-Headers"] = "mmweb_appid"
             headers["Access-Control-Request-Method"] = "POST"
-            for attempt in range(3):
-                preflight = requests.options(UPLOAD_MEDIA_BASE, params=params, headers=headers)
+            for inner_attempt in range(3):
+                preflight = requests.options(UPLOAD_PARALLEL_BASE, params=params, headers=headers)
                 if preflight.status_code == 200:
                     break
-                params['random'] = random_string()
-                if attempt == 2:
+                else:
+                    params['random'] = random_string()
+                if inner_attempt == 2:
                     print(f"❌ Preflight failed after 3 attempts for chunk {chunk_index}")
                     return
+
+            print(f"[{chunk_index + 1}/{total_chunks}] Uploading chunk...")
             multipart_data, content_type = get_form_data_type(data)
             headers = get_header(host=file_wx_domain, content_type=content_type)
-            headers['Mmweb_appid'] = "wx_webfilehelper"
+            headers['Mmweb_appid'] = 'wx_webfilehelper'
+            resp = requests.post(
+                UPLOAD_PARALLEL_BASE,
+                params=params,
+                data=multipart_data,
+                headers=headers,
+                cookies=cookies_dict,
 
-            print(f"📤 Uploading chunk {chunk_index + 1}/{total_chunks}...")
-            resp = requests.post(UPLOAD_MEDIA_BASE, params=params, data=multipart_data, headers=headers,
-                                 cookies=cookies_dict)
-            try:
-                result = resp.json()
-                print("✅ Upload success:", result)
-            except:
-                print(resp.status_code, resp.text)
-    webwxsendappmsg(cookie_dict=cookies_dict, filename=filename, filesize=filesize,
+            )
+            result = resp.json()
+            print(result)
+            if result.get("BaseResponse", {}).get("Ret") == 0:
+                # 成功
+                if chunk_index == 0:
+                    upload_request["UploadID"] = result["UploadID"]
+                break
+            elif result.get("BaseResponse", {}).get("Ret") == -1:
+                if attempt == MAX_RETIRES - 1:
+                    return
+                print("⚠️ Logic err, retrying...")
+                time.sleep(1)
+                continue
+
+    webwxsendappmsg(cookie_dict=cookies_dict, filename=filename, filesize=file_size,
                     mediaid=result['MediaId'], pass_ticket=pass_ticket, skey=skey, user_config=user_config,
                     aeskey=file_config["AESKey"], signature=file_config["Signature"])
 
 
-def upload_auto_file(file_path, cookies_dict, user_config, skey, pass_ticket):
-    file_size = os.path.getsize(file_path)
+print("✅ Upload completed.")
+
+
+def upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None):
+    # 处理文件路径或文件流
+    if file_stream is None and file_path is not None:
+        # 从文件路径读取
+        file_size = os.path.getsize(file_path)
+        total_chunks = math.ceil(file_size / CHUNK_SIZE)
+        file_md5 = get_file_md5(file_path)
+        filename = os.path.basename(file_path)
+    elif file_stream is not None:
+        # 使用文件流
+        file_size = len(file_stream)
+        total_chunks = math.ceil(file_size / CHUNK_SIZE)
+        file_md5 = get_file_md5(None, file_stream)  # 函数需要适应流
+        filename = filename if filename else f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{random_string(8)}"
+    else:
+        raise ValueError("Either 'file_path' must be provided or 'file_stream' must be given.")
+
+    file_config = get_aes_signature(cookies_dict, user_config, skey, filename, file_size, file_md5)
+    result = {}
+    client_media_id = generate_client_media_id()
+
+    for chunk_index in range(total_chunks):
+        if file_stream is None:
+            # 如果没有 file_stream，就从文件中读取数据
+            with open(file_path, 'rb') as f:
+                f.seek(chunk_index * CHUNK_SIZE)
+                chunk_data = f.read(CHUNK_SIZE)
+        else:
+            # 如果有 file_stream，则直接计算每个数据块
+            chunk_start = chunk_index * CHUNK_SIZE
+            chunk_data = file_stream[chunk_start:chunk_start + CHUNK_SIZE]
+
+        upload_media_request = {
+            "UploadType": 2,
+            "BaseRequest": {
+                "Uin": cookies_dict["wxuin"],
+                "Sid": cookies_dict["wxsid"],
+                "Skey": skey,
+                "DeviceID": device_id
+            },
+            "ClientMediaId": client_media_id,
+            "TotalLen": file_size,
+            "StartPos": chunk_index * CHUNK_SIZE,
+            "DataLen": len(chunk_data),
+            "MediaType": 4,
+            "FromUserName": user_config["UserName"],
+            "ToUserName": "filehelper",
+            "FileMd5": file_md5
+        }
+        upload_media_req = json.dumps(upload_media_request).replace(": ", ":").replace(", ", ",")
+        data = {
+            "name": filename,
+            "lastModifiedDate": time.strftime('%a %b %d %Y %H:%M:%S GMT+0800 (中国标准时间)', time.localtime()),
+            "size": str(file_size),
+            "type": "",
+            "chunks": str(total_chunks),
+            "chunk": str(chunk_index),
+            "mediatype": "doc",
+            "uploadmediarequest": upload_media_req,
+            "webwx_data_ticket": cookies_dict['webwx_data_ticket'],
+            "pass_ticket": pass_ticket,
+            "filename": (filename, chunk_data, mimetypes.guess_type(filename)[0] or "application/octet-stream")
+        }
+
+        params = {
+            "f": "json",
+            "random": random_string()
+        }
+
+        headers = get_header(host=file_wx_domain)
+        headers["Access-Control-Request-Headers"] = "mmweb_appid"
+        headers["Access-Control-Request-Method"] = "POST"
+        for attempt in range(3):
+            preflight = requests.options(UPLOAD_MEDIA_BASE, params=params, headers=headers)
+            if preflight.status_code == 200:
+                break
+            params['random'] = random_string()
+            if attempt == 2:
+                print(f"❌ Preflight failed after 3 attempts for chunk {chunk_index}")
+                return
+        print(data)
+        multipart_data, content_type = get_form_data_type(data)
+        headers = get_header(host=file_wx_domain, content_type=content_type)
+        headers['Mmweb_appid'] = "wx_webfilehelper"
+
+        print(f"📤 Uploading chunk {chunk_index + 1}/{total_chunks}...")
+        resp = requests.post(UPLOAD_MEDIA_BASE, params=params, data=multipart_data, headers=headers,
+                             cookies=cookies_dict)
+        try:
+            result = resp.json()
+            print("✅ Upload success:", result)
+        except ValueError:
+            print(resp.status_code, resp.text)
+
+    webwxsendappmsg(cookie_dict=cookies_dict, filename=filename, filesize=file_size,
+                    mediaid=result['MediaId'], pass_ticket=pass_ticket, skey=skey, user_config=user_config,
+                    aeskey=file_config["AESKey"], signature=file_config["Signature"])
+
+
+def upload_auto_file(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None):
+    if not file_path:
+        file_size = len(file_stream)
+    else:
+        file_size = os.path.getsize(file_path)
 
     if file_size > 25 * 1024 * 1024:  # 大于25MB，使用并发上传
         print("📦 使用并发上传（webwxuploadmediaparallel）")
-        upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket)
+        upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream, filename)
     else:
         print("📄 使用普通上传（webwxuploadmedia）")
-        upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket)
+        upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream, filename)

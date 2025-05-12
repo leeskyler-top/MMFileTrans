@@ -102,7 +102,6 @@ def webwxstatreport(session, data=None):
 
 def whitelist(session):
     url = f"{aegis_baseurl}/collect/whitelist"
-    url = f'https://aegis.qq.com/collect/whitelist?id=neGcmxiTIeDBcIOiWX&uin=2sn4oyl4n37&version=1.36.0&aid=a0467acb-97cf-49fa-9acb-a987bb549172&env=production&platform=3&netType=4&vp=210%20*%20742&sr=1536%20*%20864&sessionId=session-1746804015703&from=https%3A%2F%2Ffilehelper.weixin.qq.com%2F&referer='
     params = {
         "id": report_id,
         "uin": uin,
@@ -120,7 +119,7 @@ def whitelist(session):
 
     print(params)
     headers = get_header(host=aegis_domain, content_type=None)
-    res = reqApi(session, url, headers, "GET")
+    res = reqApi(session, url, headers, "GET", params=params)
     print(f"whitelist: {res.status_code}")
 
 
@@ -226,7 +225,8 @@ def webwxnewloginpage(session, redirect_url, save_cookie_path=cookie_path):
     res = reqApi(session, redirect_url, headers, "POST", allow_redirect=False)
     print(res.cookies.get_dict())
     login_data = parse_webwxnewloginpage_response(res.text)
-    cookie_dict = save_cookies_as_json(res.cookies.get_dict(), login_data['skey'], login_data['pass_ticket'], 6000, save_cookie_path=save_cookie_path)
+    cookie_dict = save_cookies_as_json(res.cookies.get_dict(), login_data['skey'], login_data['pass_ticket'], 6000,
+                                       save_cookie_path=save_cookie_path)
     print(cookie_dict)
     reqApi(session, filetransfer_baseurl, headers=headers, allow_redirect=False)
     return cookie_dict, login_data['skey'], login_data['pass_ticket']
@@ -254,7 +254,7 @@ def webwxinit(session, pass_ticket, skey, cookie_dict):
     return res.json()['User']
 
 
-def run_login(using_general_cookie=True, using_cookie_path="./micromsg.json"):
+def run_login(using_general_cookie=True, using_cookie_path="./micromsg.json", show_img: bool = False):
     session = get_new_session()
     cookies_dict, skey, pass_ticket = load_cookies_from_json(cookie_path if using_general_cookie else using_cookie_path)
     if cookies_dict:
@@ -276,7 +276,7 @@ def run_login(using_general_cookie=True, using_cookie_path="./micromsg.json"):
         # 调用 speed 请求
         speed(session, qrcode_url=qrcode_url, duration=round(random.uniform(70, 120), 1))
         # 下载二维码图片
-        download_img(qrcode_url, show_img=True)
+        download_img(session, qrcode_url, show_img=show_img)
 
         waiting_count = 0  # 在每次新的二维码扫描之前重置计数器
         while waiting_count < MAX_WAITING_COUNT:
@@ -284,7 +284,8 @@ def run_login(using_general_cookie=True, using_cookie_path="./micromsg.json"):
             code, redirect_url = login(session, login_uuid)
 
             if code == '200':  # 登录成功
-                cookies_dict, skey, pass_ticket = webwxnewloginpage(session, redirect_url, using_cookie_path if using_general_cookie else cookie_path)
+                cookies_dict, skey, pass_ticket = webwxnewloginpage(session, redirect_url,
+                                                                    using_cookie_path if using_general_cookie else cookie_path)
                 user_conf = webwxinit(session, pass_ticket=cookies_dict['webwx_data_ticket'], skey=skey,
                                       cookie_dict=cookies_dict)
                 return session, cookies_dict, skey, pass_ticket, user_conf  # 成功后退出

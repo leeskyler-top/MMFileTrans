@@ -59,9 +59,9 @@ def parse_jslogin_response(js_text):
     return code_match, redirect_match
 
 
-def download_img(image_url, show_img=False, show_time_ms=7000):
+def download_img(session, image_url, show_img=False, show_time_ms=7000):
     # 使用 requests 下载图片数据
-    resp = requests.get(image_url)
+    resp = session.get(image_url)
     if resp.status_code != 200:
         return "Failed to fetch image", 502
 
