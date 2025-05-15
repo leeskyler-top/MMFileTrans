@@ -125,4 +125,5 @@ def handle_connect():
 
 
 if __name__ == "__main__":
+    print(host)
     socketio.run(app, debug=True, allow_unsafe_werkzeug=True, port=5000, host=host)

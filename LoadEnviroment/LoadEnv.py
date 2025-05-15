@@ -33,7 +33,7 @@ def load_env(filepath):
         user_agent = data['user_agent']
         expiry_duration_sec = data['expiry_duration_sec']
         cookie_path = data['cookie_path']
-        host = data['aegis_report_id']
+        host = data['host']
 
 
 _default_env_path = os.path.join(os.getcwd(), '.env.json')
