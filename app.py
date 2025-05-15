@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
+
+from LoadEnviroment.LoadEnv import host
 from MsgService.Login import jslogin, login, get_new_session, webwxnewloginpage, webwxinit, whitelist, webwxstatreport, \
     speed, logout
 from MsgService.Upload import upload_auto_file
@@ -123,4 +125,4 @@ def handle_connect():
 
 
 if __name__ == "__main__":
-    socketio.run(app, debug=True, allow_unsafe_werkzeug=True, port=5000)
+    socketio.run(app, debug=True, allow_unsafe_werkzeug=True, port=5000, host=host)

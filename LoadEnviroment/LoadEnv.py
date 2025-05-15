@@ -20,11 +20,12 @@ szfiletransfer_domain = "szfilehelper.weixin.qq.com"
 szfiletransfer_baseurl = "https://szfilehelper.weixin.qq.com"
 expiry_duration_sec = 86400
 cookie_path = "./micromsg.json"
+host = "0.0.0.0"
 
 
 def load_env(filepath):
     global aegis_report_id_json_path, user_agent, sec_ch_ua, \
-        expiry_duration_sec, cookie_path
+        expiry_duration_sec, cookie_path, host
 
     with open(filepath, 'r') as f:
         data = json.load(f)
@@ -32,7 +33,7 @@ def load_env(filepath):
         user_agent = data['user_agent']
         expiry_duration_sec = data['expiry_duration_sec']
         cookie_path = data['cookie_path']
-        aegis_report_id = data['aegis_report_id']
+        host = data['aegis_report_id']
 
 
 _default_env_path = os.path.join(os.getcwd(), '.env.json')
