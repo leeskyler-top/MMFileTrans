@@ -254,6 +254,24 @@ def webwxinit(session, pass_ticket, skey, cookie_dict):
     return res.json()['User']
 
 
+def logout(skey, cookie_dict):
+    url = f"{filetransfer_baseurl}/cgi-bin/mmwebwx-bin/logout"
+    params = {
+        "redirect": "1",
+        "type": "0",
+        "skey": skey,
+
+    }
+    header = get_header(filetransfer_domain, content_type="application/json;charset=UTF-8")
+    header['Mmweb_appid'] = 'wx_webfilehelper'
+    payload = {
+        "sid": cookie_dict['wxsid'],
+        "uin": int(cookie_dict['wxuin']),
+    }
+    res = reqApi(session, url, header, "POST", payload, params=params)
+    return res.status_code
+
+
 def run_login(using_general_cookie=True, using_cookie_path="./micromsg.json", show_img: bool = False):
     session = get_new_session()
     cookies_dict, skey, pass_ticket = load_cookies_from_json(cookie_path if using_general_cookie else using_cookie_path)

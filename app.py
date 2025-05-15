@@ -1,10 +1,11 @@
 import random
+from datetime import datetime, timedelta
 
 from flask import Flask, request, jsonify
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 from MsgService.Login import jslogin, login, get_new_session, webwxnewloginpage, webwxinit, whitelist, webwxstatreport, \
-    speed
+    speed, logout
 from MsgService.Upload import upload_auto_file
 from utils.ParseData import download_img
 import base64
@@ -56,6 +57,7 @@ def start_login(session, session_id):
                     'user_conf': user_conf,
                     'skey': skey,
                     'pass_ticket': pass_ticket,
+                    'expiry_time': datetime.now() + timedelta(seconds=3600 - 200)
                 }
                 socketio.emit('login_success', {'message': 'Logged In'})
                 return
@@ -67,32 +69,37 @@ def start_login(session, session_id):
 
 @app.route('/login', methods=['POST'])
 def login_endpoint():
-    session_id = str(uuid.uuid4())  # Generate a unique session ID for this request
+    data = request.get_json()
+    if data.get('session_id') is None or sessions.get(data.get('session_id')) is None:
+        session_id = str(uuid.uuid4())  # Generate a unique session ID for this request
+        session = get_new_session()
+        socketio.start_background_task(target=start_login, session=session, session_id=session_id)
+        return {"message": "Running login process, please wait for updates via WebSocket.",
+                "session_id": session_id}, 200
+    return {"message": "healthy", "session_id": data['session_id']}, 200
 
-    # Create a new session
-    session = get_new_session()
-    socketio.start_background_task(target=start_login, session=session, session_id=session_id)
 
-    return {"message": "Running login process, please wait for updates via WebSocket.", "session_id": session_id}, 200
+@app.route('/logout', methods=['DELETE'])
+def logout_endpoint():
+    data = request.get_json()
+    if data.get('session_id') is None or sessions.get(data.get('session_id')) is None:
+        return {"message": "SessionID Not Found", "session_id": None}, 404
+    status_code = logout(data['session_id'], sessions['session_id']['skey'])
+    del sessions[data['session_id']]
+    return {"message": f"Session has been logout."}, status_code
 
 
 @app.route('/upload', methods=['POST'])
 def handle_file_upload():
     session_id = request.form.get('session_id')
-
     if session_id not in sessions:
         return jsonify({'message': 'Session not valid or expired.'}), 403
-
     if 'file' not in request.files:
         return jsonify({'message': 'No file part in the request.'}), 400
-
     file = request.files['file']
-
     if file.filename == '':
         return jsonify({'message': 'No selected file.'}), 400
-
     cookies_dict = sessions[session_id]['cookies']
-
     print(f"Uploading file: {file.filename}")
 
     try:

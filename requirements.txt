@@ -1,0 +1,9 @@
+Flask==3.1.1
+Flask_Cors==5.0.0
+Flask_SocketIO==5.5.1
+numpy==2.2.5
+opencv_contrib_python==4.8.0.74
+opencv_python==4.11.0.86
+Requests==2.32.3
+requests_toolbelt==1.0.0
+urllib3==2.4.0
