@@ -254,7 +254,7 @@ def webwxinit(session, pass_ticket, skey, cookie_dict):
     return res.json()['User']
 
 
-def logout(skey, cookie_dict):
+def logout(session, skey, cookie_dict):
     url = f"{filetransfer_baseurl}/cgi-bin/mmwebwx-bin/logout"
     params = {
         "redirect": "1",
