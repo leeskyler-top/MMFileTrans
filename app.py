@@ -72,13 +72,13 @@ def start_login(session, session_id):
 @app.route('/login', methods=['POST'])
 def login_endpoint():
     data = request.get_json()
-    if data.get('session_id') is None or sessions.get(data.get('session_id')) is None:
-        session_id = str(uuid.uuid4())  # Generate a unique session ID for this request
+    if data.get('session_id') is None or sessions.get(data.get('session_id')) is None or sessions.get(data.get('session_id')).get('expiry_time') < datetime.now():
+        session_id = str(uuid.uuid4())
         session = get_new_session()
         socketio.start_background_task(target=start_login, session=session, session_id=session_id)
         return {"message": "Running login process, please wait for updates via WebSocket.",
                 "session_id": session_id}, 200
-    return {"message": "healthy", "session_id": data['session_id']}, 200
+    return {"message": "Valid Session ID", "session_id": data['session_id']}, 200
 
 
 @app.route('/logout', methods=['DELETE'])
