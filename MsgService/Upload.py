@@ -99,7 +99,7 @@ def webwxsendappmsg(cookie_dict, filename, filesize, mediaid, pass_ticket, skey,
     return res.json()
 
 
-def upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None):
+def upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None, socketio=None):
     if not file_stream:
         file_size = os.path.getsize(file_path)
         total_chunks = math.ceil(file_size / CHUNK_SIZE)
@@ -170,6 +170,10 @@ def upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket, fil
                     return
 
             print(f"[{chunk_index + 1}/{total_chunks}] Uploading chunk...")
+            if socketio is not None:
+                socketio.emit('upload_progress', {
+                    'progress': f"{(chunk_index + 1) / total_chunks}"
+                })
             multipart_data, content_type = get_form_data_type(data)
             headers = get_header(host=file_wx_domain, content_type=content_type)
             headers['Mmweb_appid'] = 'wx_webfilehelper'
@@ -203,7 +207,7 @@ def upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket, fil
 print("✅ Upload completed.")
 
 
-def upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None):
+def upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None, socketio=None):
     # 处理文件路径或文件流
     if file_stream is None and file_path is not None:
         # 从文件路径读取
@@ -289,6 +293,10 @@ def upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket, f
         headers['Mmweb_appid'] = "wx_webfilehelper"
 
         print(f"📤 Uploading chunk {chunk_index + 1}/{total_chunks}...")
+        if socketio is not None:
+            socketio.emit('upload_progress', {
+                'progress': f"{(chunk_index + 1) / total_chunks}"
+            })
         resp = requests.post(UPLOAD_MEDIA_BASE, params=params, data=multipart_data, headers=headers,
                              cookies=cookies_dict)
         try:
@@ -302,7 +310,7 @@ def upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket, f
                     aeskey=file_config["AESKey"], signature=file_config["Signature"])
 
 
-def upload_auto_file(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None):
+def upload_auto_file(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None, socketio=None):
     if not file_path:
         file_size = len(file_stream)
     else:
@@ -310,7 +318,7 @@ def upload_auto_file(file_path, cookies_dict, user_config, skey, pass_ticket, fi
 
     if file_size > 25 * 1024 * 1024:  # 大于25MB，使用并发上传
         print("📦 使用并发上传（webwxuploadmediaparallel）")
-        upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream, filename)
+        upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream, filename, socketio)
     else:
         print("📄 使用普通上传（webwxuploadmedia）")
-        upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream, filename)
+        upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream, filename, socketio)

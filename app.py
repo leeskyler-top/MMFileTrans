@@ -112,8 +112,10 @@ def handle_file_upload():
             skey=sessions[session_id]['skey'],
             pass_ticket=sessions[session_id]['pass_ticket'],
             filename=file.filename,
-            file_stream=file.read()
+            file_stream=file.read(),
+            socketio=socketio
         )
+
         return jsonify({'message': 'File uploaded successfully.'}), 200
     except Exception as e:
         return jsonify({'message': f'File upload failed: {str(e)}'}), 500
