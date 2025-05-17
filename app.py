@@ -24,6 +24,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 sessions = {}
 active_login_threads = {}  # 用于跟踪每个 session 的登录线程
 
+
 def start_login(session, session_id):
     """Handles the login process and refreshing of QR code."""
     while True:
@@ -50,7 +51,8 @@ def start_login(session, session_id):
 
             if code == '200':  # Login Successful
                 cookies_dict, skey, pass_ticket = webwxnewloginpage(session, redirect_url)
-                user_conf = webwxinit(session, pass_ticket=cookies_dict['webwx_data_ticket'], skey=skey, cookie_dict=cookies_dict)
+                user_conf = webwxinit(session, pass_ticket=cookies_dict['webwx_data_ticket'], skey=skey,
+                                      cookie_dict=cookies_dict)
 
                 sessions[session_id] = {
                     'session': session,
@@ -67,6 +69,7 @@ def start_login(session, session_id):
             elif code == '408':
                 break
 
+
 @app.route('/login', methods=['POST'])
 def login_endpoint():
     data = request.get_json()
@@ -78,7 +81,8 @@ def login_endpoint():
             # 停止已有的登录过程
             active_login_threads[session_id].cancel()  # 这个方法需要自定义以停止登录过程
 
-        session_id = str(uuid.uuid4())
+        if session_id is None:
+            session_id = str(uuid.uuid4())
         session = get_new_session()
 
         # 使用 Flask-SocketIO 的后台任务
@@ -89,6 +93,7 @@ def login_endpoint():
 
     return {"message": "Valid Session ID", "session_id": session_id}, 200
 
+
 @app.route('/logout', methods=['DELETE'])
 def logout_endpoint():
     data = request.get_json()
@@ -98,12 +103,13 @@ def logout_endpoint():
         return {"message": "SessionID Not Found", "session_id": None}, 404
 
     # 清理会话信息
-    status_code = logout(sessions[session_id]['session'],sessions[session_id]['skey'], sessions[session_id]['cookies'])
+    status_code = logout(sessions[session_id]['session'], sessions[session_id]['skey'], sessions[session_id]['cookies'])
     del sessions[session_id]
     if session_id in active_login_threads:
         del active_login_threads[session_id]  # 清理活动线程
 
     return {"message": "Session has been logged out."}, status_code
+
 
 @app.route('/upload', methods=['POST'])
 def handle_file_upload():
@@ -134,9 +140,11 @@ def handle_file_upload():
     except Exception as e:
         return jsonify({'message': f'File upload failed: {str(e)}'}), 500
 
+
 @socketio.on('connect')
 def handle_connect():
     emit('message', {'data': 'Connected to WebSocket.'})
+
 
 if __name__ == "__main__":
     print(host)
