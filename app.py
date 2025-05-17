@@ -15,6 +15,7 @@ from utils.ParseData import download_img
 import base64
 import io
 import uuid
+import eventlet
 
 app = Flask(__name__)
 CORS(app)
@@ -25,9 +26,14 @@ sessions = {}
 active_login_threads = {}  # 用于跟踪每个 session 的登录线程
 
 
-def start_login(session, session_id):
+def start_login(session, session_id, stop_event):
     """Handles the login process and refreshing of QR code."""
+    start_time = datetime.now()
     while True:
+        # 检查是否超过1分钟
+        if (datetime.now() - start_time).seconds > 30:
+            socketio.emit('login_timeout', {'message': 'Login process timed out after 0.5 minute.'})
+            return
         whitelist(session)
         webwxstatreport(session)
         login_uuid = jslogin(session)
@@ -44,7 +50,8 @@ def start_login(session, session_id):
         MAX_WAITING_COUNT = 20
 
         while waiting_count < MAX_WAITING_COUNT:
-            socketio.sleep(1)  # Wait for 1 second
+            if stop_event.wait(1):  # 如果事件被触发，退出
+                return
             code, redirect_url = login(session, login_uuid)
 
             socketio.emit('login_status', {'code': code})
@@ -69,29 +76,29 @@ def start_login(session, session_id):
             elif code == '408':
                 break
 
-
 @app.route('/login', methods=['POST'])
 def login_endpoint():
     data = request.get_json()
     session_id = data.get('session_id')
 
-    if session_id is None or sessions.get(session_id) is None or sessions[session_id]['expiry_time'] < datetime.now():
-        # 如果已经有线程在处理该 session_id，则需要中止它
-        if session_id in active_login_threads:
-            # 停止已有的登录过程
-            active_login_threads[session_id].cancel()  # 这个方法需要自定义以停止登录过程
+    if session_id is None:
+        session_id = str(uuid.uuid4())
 
-        if session_id is None:
-            session_id = str(uuid.uuid4())
+    stop_event = active_login_threads.pop(session_id, None)
+    if stop_event is not None:
+        stop_event.send()  # 触发之前的事件，以便退出循环
+
+    if session_id not in sessions or sessions[session_id]['expiry_time'] < datetime.now():
         session = get_new_session()
-
-        # 使用 Flask-SocketIO 的后台任务
-        socketio.start_background_task(start_login, session, session_id)
+        stop_event = eventlet.Event()  # 创建新的事件
+        socketio.start_background_task(start_login, session, session_id, stop_event)
+        active_login_threads[session_id] = stop_event
 
         return {"message": "Running login process, please wait for updates via WebSocket.",
                 "session_id": session_id}, 200
 
-    return {"message": "Valid Session ID", "session_id": session_id}, 200
+    return {"message": "Already Login.",
+            "session_id": session_id}, 200
 
 
 @app.route('/logout', methods=['DELETE'])
@@ -106,6 +113,7 @@ def logout_endpoint():
     status_code = logout(sessions[session_id]['session'], sessions[session_id]['skey'], sessions[session_id]['cookies'])
     del sessions[session_id]
     if session_id in active_login_threads:
+        active_login_threads[session_id].set()  # 终止活动的后台任务
         del active_login_threads[session_id]  # 清理活动线程
 
     return {"message": "Session has been logged out."}, status_code
