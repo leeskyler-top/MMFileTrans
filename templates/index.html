@@ -30,6 +30,11 @@
             document.getElementById('status').innerText = 'Login Successful';
         });
 
+        socket.on('upload_progress', function(data) {
+            console.log('Upload progress:', data.progress);
+            document.getElementById('status').innerText = data.progress;
+        });
+
         document.getElementById('loginButton').onclick = function() {
             fetch('http://127.0.0.1:5000/login', {
                 method: 'POST',

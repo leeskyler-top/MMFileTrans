@@ -99,7 +99,8 @@ def webwxsendappmsg(cookie_dict, filename, filesize, mediaid, pass_ticket, skey,
     return res.json()
 
 
-def upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None, socketio=None):
+def upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None,
+                    socketio=None):
     if not file_stream:
         file_size = os.path.getsize(file_path)
         total_chunks = math.ceil(file_size / CHUNK_SIZE)
@@ -207,7 +208,8 @@ def upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket, fil
 print("✅ Upload completed.")
 
 
-def upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None, socketio=None):
+def upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None,
+                      socketio=None):
     # 处理文件路径或文件流
     if file_stream is None and file_path is not None:
         # 从文件路径读取
@@ -287,7 +289,6 @@ def upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket, f
             if attempt == 2:
                 print(f"❌ Preflight failed after 3 attempts for chunk {chunk_index}")
                 return
-        print(data)
         multipart_data, content_type = get_form_data_type(data)
         headers = get_header(host=file_wx_domain, content_type=content_type)
         headers['Mmweb_appid'] = "wx_webfilehelper"
@@ -310,7 +311,8 @@ def upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket, f
                     aeskey=file_config["AESKey"], signature=file_config["Signature"])
 
 
-def upload_auto_file(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None, socketio=None):
+def upload_auto_file(file_path, cookies_dict, user_config, skey, pass_ticket, file_stream=None, filename=None,
+                     socketio=None):
     if not file_path:
         file_size = len(file_stream)
     else:

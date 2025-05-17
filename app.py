@@ -133,7 +133,8 @@ def handle_file_upload():
     print(f"Uploading file: {file.filename}")
 
     try:
-        upload_auto_file(
+        socketio.start_background_task(
+            upload_auto_file,
             None,  # 直接传递文件流
             cookies_dict=cookies_dict,
             user_config=sessions[session_id]['user_conf'],
