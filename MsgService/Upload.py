@@ -172,9 +172,10 @@ def upload_parallel(file_path, cookies_dict, user_config, skey, pass_ticket, fil
 
             print(f"[{chunk_index + 1}/{total_chunks}] Uploading chunk...")
             if socketio is not None:
-                socketio.emit('upload_progress', {
-                    'progress': f"{(chunk_index + 1) / total_chunks}"
-                })
+                socketio.start_background_task(
+                    lambda index=chunk_index: socketio.emit('upload_progress', {'progress': (index + 1) / total_chunks})
+                )
+                socketio.sleep(0)  # 让事件循环有机会处理
             multipart_data, content_type = get_form_data_type(data)
             headers = get_header(host=file_wx_domain, content_type=content_type)
             headers['Mmweb_appid'] = 'wx_webfilehelper'
@@ -295,9 +296,10 @@ def upload_small_file(file_path, cookies_dict, user_config, skey, pass_ticket, f
 
         print(f"📤 Uploading chunk {chunk_index + 1}/{total_chunks}...")
         if socketio is not None:
-            socketio.emit('upload_progress', {
-                'progress': f"{(chunk_index + 1) / total_chunks}"
-            })
+            socketio.start_background_task(
+                lambda index=chunk_index: socketio.emit('upload_progress', {'progress': (index + 1) / total_chunks})
+            )
+            socketio.sleep(0)
         resp = requests.post(UPLOAD_MEDIA_BASE, params=params, data=multipart_data, headers=headers,
                              cookies=cookies_dict)
         try:
